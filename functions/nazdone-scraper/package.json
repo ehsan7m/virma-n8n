@@ -2,11 +2,11 @@
   "name": "nazdone-scraper",
   "version": "1.0.0",
   "type": "module",
-  "dependencies": {
-    "playwright": "^1.46.0",
-    "axios": "^1.7.2"
-  },
   "scripts": {
     "postinstall": "npx playwright install chromium chromium-headless-shell ffmpeg"
+  },
+  "dependencies": {
+    "playwright": "^1.45.0"
   }
 }
+
