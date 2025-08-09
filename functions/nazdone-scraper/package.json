@@ -1,11 +1,9 @@
 {
   "name": "nazdone-scraper",
   "version": "1.0.0",
-  "description": "Scraper for fetching products from nazdone.com and adding to virma.ir",
-  "main": "src/main.js",
   "type": "module",
   "scripts": {
-    "postinstall": "npx playwright install chromium"
+    "postinstall": "npx playwright install chromium chromium-headless-shell ffmpeg"
   },
   "dependencies": {
     "node-appwrite": "^14.1.0",
