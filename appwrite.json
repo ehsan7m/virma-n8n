@@ -10,12 +10,10 @@
       "path": "functions/nazdone-scraper",
       "entrypoint": "src/main.js",
       "commands": [
-        "npm install",
-        "npx playwright install --with-deps chromium"
+        "npm ci || npm install",
+        "PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium ffmpeg"
       ],
-      "ignore": [
-        "node_modules"
-      ],
+      "ignore": [],
       "events": [],
       "schedule": "",
       "timeout": 120,
