@@ -1,5 +1,3 @@
-// src/main.js
-process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '0';
 process.env.PLAYWRIGHT_CHROMIUM_USE_HEADLESS_SHELL = '0';
 
 import { chromium } from 'playwright';
@@ -12,15 +10,18 @@ function listDirSafe(dir) {
   try { return fs.existsSync(dir) ? fs.readdirSync(dir) : []; } catch { return []; }
 }
 
+// اول از پوشه‌ی غیرنقطه‌ای ما چک می‌کنیم
 function findChromeExecutable(log) {
   const roots = [
-    path.resolve('node_modules/.cache/ms-playwright'),                      // ✅ رایج‌ترین
-    path.resolve('node_modules/playwright-core/.local-browsers'),          // برخی نسخه‌ها
+    path.resolve('playwright-browsers'),                                    // ✅ اینو ما ساختیم
+    path.resolve('node_modules/.cache/ms-playwright'),                      // احتمالی
+    path.resolve('node_modules/playwright-core/.local-browsers'),          // احتمالی
     '/root/.cache/ms-playwright'                                           // fallback
   ];
   const candidates = [];
   for (const root of roots) {
-    const dirs = listDirSafe(root).filter(d => /^chromium-\d+/i.test(d))
+    const dirs = listDirSafe(root)
+      .filter(d => /^chromium-\d+/i.test(d))
       .sort((a,b) => parseInt(b.split('-')[1]) - parseInt(a.split('-')[1]));
     for (const d of dirs) {
       candidates.push(path.join(root, d, 'chrome-linux', 'chrome'));
@@ -28,14 +29,14 @@ function findChromeExecutable(log) {
   }
   for (const c of candidates) if (fs.existsSync(c)) return c;
 
-  // لاگ تشخیصی:
-  log?.('Chrome not found. Browsed roots:');
+  // لاگ عیب‌یابی
+  log?.('Chrome not found. Roots:');
   for (const root of roots) log?.(` - ${root}: [${listDirSafe(root).join(', ')}]`);
-  log?.('Checked candidates:');
-  candidates.forEach(c => log?.('  ' + c));
+  log?.('Checked:'); candidates.forEach(c => log?.('  ' + c));
   return null;
 }
 
+// --- بقیه‌ی کمکی‌ها (سفارش همان قبلی) ---
 function sizeOrderValue(labelRaw) {
   const label = String(labelRaw || '').trim().toUpperCase();
   const num = parseFloat(label.replace(/[^\d.]/g, ''));
@@ -182,12 +183,23 @@ export default async (context) => {
   const url = body.url || req.query?.url;
   if (!url) return res.json({ ok:false, error:'Missing "url" in JSON body' }, 400);
 
-  // پیدا کردن chrome
-  const executablePath = findChromeExecutable(log);
+  // پیدا کردن chrome از پوشه‌ی غیرنقطه‌ای
+  const executablePath = (() => {
+    const root = path.resolve('playwright-browsers');
+    const dirs = listDirSafe(root).filter(d => /^chromium-\d+/i.test(d))
+      .sort((a,b) => parseInt(b.split('-')[1]) - parseInt(a.split('-')[1]));
+    for (const d of dirs) {
+      const p = path.join(root, d, 'chrome-linux', 'chrome');
+      if (fs.existsSync(p)) return p;
+    }
+    log(`playwright-browsers content: [${listDirSafe(root).join(', ')}]`);
+    return null;
+  })();
+
   if (!executablePath) {
     return res.json({
-      ok: false,
-      error: 'Chrome executable not found. Make sure build downloaded Chromium into node_modules/.cache/ms-playwright (and node_modules is NOT ignored).'
+      ok:false,
+      error:'Chrome executable not found under ./playwright-browsers. Make sure build ran "PLAYWRIGHT_BROWSERS_PATH=playwright-browsers npx playwright install chromium" and that folder is not ignored.'
     }, 500);
   }
   log(`Using chrome: ${executablePath}`);
