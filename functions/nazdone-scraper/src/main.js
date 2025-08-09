@@ -13,12 +13,12 @@ function listDirSafe(dir) {
 // اول از پوشه‌ی غیرنقطه‌ای ما چک می‌کنیم
 function findChromeExecutable(log) {
   const roots = [
-    path.resolve('playwright-browsers'),                                    // ✅ اینو ما ساختیم
-    path.resolve('node_modules/.cache/ms-playwright'),                      // احتمالی
-    path.resolve('node_modules/playwright-core/.local-browsers'),          // احتمالی
+    path.resolve('node_modules/playwright-browsers'),
+    path.resolve('node_modules/.cache/ms-playwright'),
+    path.resolve('node_modules/playwright-core/.local-browsers'),
     '/root/.cache/ms-playwright'                                           // fallback
   ];
-  const candidates = [];
+   const candidates = [];
   for (const root of roots) {
     const dirs = listDirSafe(root)
       .filter(d => /^chromium-\d+/i.test(d))
@@ -31,8 +31,9 @@ function findChromeExecutable(log) {
 
   // لاگ عیب‌یابی
   log?.('Chrome not found. Roots:');
-  for (const root of roots) log?.(` - ${root}: [${listDirSafe(root).join(', ')}]`);
-  log?.('Checked:'); candidates.forEach(c => log?.('  ' + c));
+  roots.forEach(r => log?.(` - ${r}: [${listDirSafe(r).join(', ')}]`));
+  log?.('Checked:');
+  candidates.forEach(c => log?.('  ' + c));
   return null;
 }
 
