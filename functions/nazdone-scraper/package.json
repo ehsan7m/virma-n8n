@@ -2,11 +2,11 @@
   "name": "nazdone-scraper",
   "version": "1.0.0",
   "type": "module",
-  "scripts": {
-    "postinstall": "npx playwright install chromium chromium-headless-shell ffmpeg"
-  },
   "dependencies": {
-    "playwright": "^1.45.0"
+    "playwright": "^1.46.0"
+  },
+  "scripts": {
+    "postinstall": "PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium ffmpeg"
   }
 }
 
