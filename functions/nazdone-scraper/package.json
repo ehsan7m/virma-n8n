@@ -1,13 +1,16 @@
 {
-  "name": "nazdone-scraper",
+  "name": "starter-template",
   "version": "1.0.0",
+  "description": "",
+  "main": "src/main.js",
   "type": "module",
-  "dependencies": {
-    "playwright-core": "^1.46.0",
-    "playwright-chromium": "^1.46.0"
-  },
   "scripts": {
-    "postinstall": "PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium"
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "node-appwrite": "^14.1.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.2.5"
   }
 }
-

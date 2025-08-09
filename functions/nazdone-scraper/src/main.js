@@ -1,37 +1,35 @@
-import { chromium } from 'playwright-chromium';
-import path from 'path';
-import fs from 'fs';
+import { Client, Users } from 'node-appwrite';
 
-// پیدا کردن مسیر واقعی کرومیوم
-function findChromiumExecutable() {
-  const basePath = path.resolve('node_modules/.cache/ms-playwright');
-  const chromiumFolder = fs.readdirSync(basePath).find(f => f.startsWith('chromium-'));
-  if (!chromiumFolder) throw new Error('Chromium folder not found in node_modules cache');
-  return path.join(basePath, chromiumFolder, 'chrome-linux', 'chrome');
-}
-
-export default async (context) => {
-  const { res, log, error } = context;
+// This Appwrite function will be executed every time your function is triggered
+export default async ({ req, res, log, error }) => {
+  // You can use the Appwrite SDK to interact with other services
+  // For this example, we're using the Users service
+  const client = new Client()
+    .setEndpoint(process.env.APPWRITE_FUNCTION_API_ENDPOINT)
+    .setProject(process.env.APPWRITE_FUNCTION_PROJECT_ID)
+    .setKey(req.headers['x-appwrite-key'] ?? '');
+  const users = new Users(client);
 
   try {
-    const exePath = findChromiumExecutable();
-    log(`Using Chromium executable at: ${exePath}`);
-
-    const browser = await chromium.launch({
-      executablePath: exePath,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      headless: true
-    });
-
-    const page = await browser.newPage();
-    await page.goto('https://www.nazdone.com/product/24526/%D8%AA%DB%8C%D8%B4%D8%B1%D8%AA-Little-Bear-NZDE', { waitUntil: 'domcontentloaded' });
-    const title = await page.title();
-
-    await browser.close();
-
-    return res.json({ ok: true, title });
-  } catch (err) {
-    error(err);
-    return res.json({ ok: false, error: err.message }, 500);
+    const response = await users.list();
+    // Log messages and errors to the Appwrite Console
+    // These logs won't be seen by your end users
+    log(`Total users: ${response.total}`);
+  } catch(err) {
+    error("Could not list users: " + err.message);
   }
+
+  // The req object contains the request data
+  if (req.path === "/ping") {
+    // Use res object to respond with text(), json(), or binary()
+    // Don't forget to return a response!
+    return res.text("Pong");
+  }
+
+  return res.json({
+    motto: "Build like a team of hundreds_",
+    learn: "https://appwrite.io/docs",
+    connect: "https://appwrite.io/discord",
+    getInspired: "https://builtwith.appwrite.io",
+  });
 };
