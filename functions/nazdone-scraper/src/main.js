@@ -1,63 +1,37 @@
-// استفاده از مرورگر نصب‌شده داخل node_modules
-process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
+import { chromium } from 'playwright-chromium';
+import path from 'path';
+import fs from 'fs';
 
-import { chromium } from 'playwright';
+// پیدا کردن مسیر واقعی کرومیوم
+function findChromiumExecutable() {
+  const basePath = path.resolve('node_modules/.cache/ms-playwright');
+  const chromiumFolder = fs.readdirSync(basePath).find(f => f.startsWith('chromium-'));
+  if (!chromiumFolder) throw new Error('Chromium folder not found in node_modules cache');
+  return path.join(basePath, chromiumFolder, 'chrome-linux', 'chrome');
+}
 
-/**
- * این فانکشن نمونه، محصول رو از URL می‌گیره و عنوانش رو برمی‌گردونه
- * @param {import('@appwrite/functions').Context} context 
- */
 export default async (context) => {
-  const { req, res, log, error } = context;
+  const { res, log, error } = context;
 
   try {
-    // دریافت ورودی از body
-    let body = {};
-    try {
-      body = req.bodyJson ?? JSON.parse(req.bodyText ?? "{}");
-    } catch (e) {
-      error(`Bad JSON: ${e.message}`);
-      return res.json({ ok: false, error: "Invalid JSON" }, 400);
-    }
+    const exePath = findChromiumExecutable();
+    log(`Using Chromium executable at: ${exePath}`);
 
-    if (!body.productUrls || !Array.isArray(body.productUrls) || !body.productUrls.length) {
-      return res.json({ ok: false, error: "No productUrls provided" }, 400);
-    }
-
-    log(`Starting scrape for ${body.productUrls.length} products...`);
-
-    // راه‌اندازی مرورگر
     const browser = await chromium.launch({
+      executablePath: exePath,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      headless: true,
+      headless: true
     });
 
-    const results = [];
-
-    for (const url of body.productUrls) {
-      try {
-        const page = await browser.newPage();
-        log(`Navigating to ${url}`);
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-
-        // نمونه داده: گرفتن عنوان صفحه
-        const title = await page.title();
-
-        results.push({ url, title });
-        await page.close();
-      } catch (scrapeErr) {
-        error(`Error scraping ${url}: ${scrapeErr.message}`);
-        results.push({ url, error: scrapeErr.message });
-      }
-    }
+    const page = await browser.newPage();
+    await page.goto('https://www.nazdone.com/product/24526/%D8%AA%DB%8C%D8%B4%D8%B1%D8%AA-Little-Bear-NZDE', { waitUntil: 'domcontentloaded' });
+    const title = await page.title();
 
     await browser.close();
 
-    log("Scraping finished.");
-    return res.json({ ok: true, products: results }, 200);
-
+    return res.json({ ok: true, title });
   } catch (err) {
-    error(`Unexpected error: ${err.message}`);
+    error(err);
     return res.json({ ok: false, error: err.message }, 500);
   }
 };
