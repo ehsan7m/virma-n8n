@@ -3,13 +3,12 @@
   "version": "1.0.0",
   "type": "module",
   "main": "src/main.js",
-  "scripts": {
-    "postinstall": "PLAYWRIGHT_BROWSERS_PATH=playwright-browsers npx playwright install chromium"
-  },
   "dependencies": {
-    "playwright": "^1.54.0"
+    "@sparticuz/chromium": "^123.0.0",
+    "puppeteer-core": "^23.4.0"
   }
 }
+
 
 
 
