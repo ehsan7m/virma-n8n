@@ -1,0 +1,25 @@
+{
+  "$id": "unique()",
+  "projectId": "YOUR_PROJECT_ID",
+  "version": "1.0",
+  "functions": [
+    {
+      "$id": "nazdone-scraper",
+      "name": "nazdone-scraper",
+      "runtime": "node-18.0",
+      "path": "functions/nazdone-scraper",
+      "entrypoint": "src/main.js",
+      "commands": [
+        "npm install",
+        "npx playwright install --with-deps chromium"
+      ],
+      "ignore": [
+        "node_modules"
+      ],
+      "events": [],
+      "schedule": "",
+      "timeout": 120,
+      "enabled": true
+    }
+  ]
+}
