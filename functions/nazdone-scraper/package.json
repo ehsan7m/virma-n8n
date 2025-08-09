@@ -4,12 +4,13 @@
   "type": "module",
   "main": "src/main.js",
   "scripts": {
-    "postinstall": "npx playwright install chromium ffmpeg"
+    "postinstall": "PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium"
   },
   "dependencies": {
-    "playwright": "^1.45.0"
+    "playwright": "^1.46.0"
   }
 }
+
 
 
 
