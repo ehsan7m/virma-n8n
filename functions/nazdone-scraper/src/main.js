@@ -1,9 +1,9 @@
 // functions/nazdone-scraper/src/main.js
-// Appwrite Functions (Node 18) — context API + robust logging
-// force chromium (not headless_shell)
-process.env.PLAYWRIGHT_CHROMIUM_USE_HEADLESS_SHELL = '0';
+// Appwrite Functions (Node 18) — context API + robust logging + explicit Chromium path
 
 import { chromium } from 'playwright';
+import fs from 'fs';
+import path from 'path';
 
 const WAIT = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -19,6 +19,48 @@ function sizeOrderValue(labelRaw) {
   const yearMatch = label.match(/(\d+)\s*سال/);
   if (yearMatch) return 500 + parseInt(yearMatch[1], 10);
   return 0;
+}
+
+/**
+ * به‌صورت داینامیک مسیر executable مرورگر Chromium را از کش Playwright پیدا می‌کند.
+ * اولویت با chromium-* است (نه headless_shell). اگر پیدا نشد، سعی می‌کند headless_shell را بردارد.
+ */
+function resolveChromiumExecutable(contextLog) {
+  const cacheRoot = '/root/.cache/ms-playwright';
+  try {
+    const entries = fs.readdirSync(cacheRoot, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+
+    // پوشه‌های chromium-XXXX را پیدا کن و بزرگ‌ترین نسخه را بردار
+    const chromiumDirs = entries
+      .filter((n) => /^chromium-\d+$/i.test(n))
+      .sort((a, b) => parseInt(b.split('-')[1], 10) - parseInt(a.split('-')[1], 10));
+
+    for (const dir of chromiumDirs) {
+      const candidate = path.join(cacheRoot, dir, 'chrome-linux', 'chrome');
+      if (fs.existsSync(candidate)) {
+        contextLog?.(`Using Chromium executable: ${candidate}`);
+        return candidate;
+      }
+    }
+
+    // در صورت عدم وجود، fallback: headless_shell
+    const shellDirs = entries
+      .filter((n) => /^chromium_headless_shell-\d+$/i.test(n))
+      .sort((a, b) => parseInt(b.split('-')[1], 10) - parseInt(a.split('-')[1], 10));
+
+    for (const dir of shellDirs) {
+      const candidate = path.join(cacheRoot, dir, 'chrome-linux', 'headless_shell');
+      if (fs.existsSync(candidate)) {
+        contextLog?.(`Using Chromium headless_shell executable: ${candidate}`);
+        return candidate;
+      }
+    }
+  } catch (e) {
+    // ignore, handled below
+  }
+  return null; // اجازه می‌دهیم Playwright خودش مدیریت کند (اگر شدنی باشد)
 }
 
 async function scrapeProduct(page, productUrl) {
@@ -51,7 +93,6 @@ async function scrapeProduct(page, productUrl) {
       const scripts = Array.from(document.querySelectorAll('script'));
       for (const s of scripts) {
         const t = s.textContent || '';
-        // تلاش برای استخراج ساختارهای درون اسکریپت
         if (t.includes('sizes') && (t.includes('colors') || t.includes('stockId'))) {
           const m = t.match(/\{[\s\S]*\}/);
           if (m) {
@@ -69,7 +110,6 @@ async function scrapeProduct(page, productUrl) {
     let sizes = [];
     let colors_flat = [];
 
-    // اگر JSON تعبیه‌شده داشته باشد
     const embedded = digForJson();
     if (embedded) {
       const candidatePaths = [
@@ -154,10 +194,9 @@ async function scrapeProduct(page, productUrl) {
 export default async (context) => {
   const { req, res, log, error } = context;
 
-  // 1) ورودی را ایمن بخوان
+  // 1) ورودی امن
   let payload = {};
   try {
-    // Appwrite v1.6+: bodyJson در دسترسه؛ اگر نبود از bodyText استفاده کن
     payload = req.bodyJson ?? (req.bodyText ? JSON.parse(req.bodyText) : {});
   } catch (e) {
     error(`Invalid JSON: ${e.message}`);
@@ -169,18 +208,29 @@ export default async (context) => {
   const categoryUrl = payload.categoryUrl || null;
   const limit = Number(payload.limit || 20);
 
-  log(`Start function: mode=${mode} urls=${productUrls.length} limit=${limit}`);
+  log(`Start: mode=${mode} urls=${productUrls.length} limit=${limit}`);
 
-  // 2) Playwright را بالا بیار (حالت headless)
+  // 2) مسیر دقیق Chromium را پیدا کن (برای جلوگیری از headless_shell)
+  const executablePath = resolveChromiumExecutable(log);
+  if (!executablePath) {
+    error('Chromium executable not found in cache. Did postinstall run?');
+    return res.json(
+      { ok: false, error: 'Chromium executable not found. Ensure `npx playwright install chromium` ran in build.' },
+      500
+    );
+  }
+
+  // 3) Playwright را بالا بیاور
   let browser;
   try {
     browser = await chromium.launch({
+      executablePath,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
       headless: true,
     });
   } catch (e) {
     error(`Chromium launch failed: ${e.message}`);
-    return res.json({ ok: false, error: 'Chromium launch failed' }, 500);
+    return res.json({ ok: false, error: `Chromium launch failed: ${e.message}` }, 500);
   }
 
   const page = await browser.newPage();
@@ -209,8 +259,8 @@ export default async (context) => {
         out.push(p);
       }
     } else {
-      error('Invalid input: provide {mode:"product", productUrls:[...]} or {mode:"category", categoryUrl:"..."}');
-      await browser.close();
+      error('Invalid input: need {mode:"product", productUrls:[...]} or {mode:"category", categoryUrl:"..."}');
+      try { await browser.close(); } catch {}
       return res.json(
         {
           ok: false,
