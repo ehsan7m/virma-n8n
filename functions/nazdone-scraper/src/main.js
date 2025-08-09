@@ -1,7 +1,8 @@
 // functions/nazdone-scraper/src/main.js
 // Appwrite Function (Node 18) — Scrape Nazdone product → JSON for n8n/WooCommerce
 
-import { chromium } from 'playwright';
+import { chromium } from 'playwright-chromium';
+
 
 const WAIT = (ms) => new Promise((r) => setTimeout(r, ms));
 
