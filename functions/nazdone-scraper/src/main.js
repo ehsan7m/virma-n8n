@@ -1,48 +1,39 @@
 import { chromium } from "playwright";
 
 export default async ({ req, res, log, error }) => {
-  // گرفتن URL محصول از payload یا query
-  const productUrl =
-    req.body?.url ||
-    req.query?.url ||
-    "https://www.nazdone.com/product/24526/%D8%AA%DB%8C%D8%B4%D8%B1%D8%AA-Little-Bear-NZDE";
-
-  log(`Scraping product from: ${productUrl}`);
+  const url = req.body?.url || req.query?.url;
+  if (!url) {
+    return res.json({ success: false, error: "Product URL is required" }, 400);
+  }
 
   let browser;
   try {
+    // استفاده از مسیر باینری لوکال تا مشکل headless_shell حل شود
+    const executablePath = require("playwright").chromium.executablePath();
+
     browser = await chromium.launch({
       headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-      ],
+      executablePath,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
     });
 
     const page = await browser.newPage();
-    await page.goto(productUrl, { waitUntil: "domcontentloaded" });
+    await page.goto(url, { waitUntil: "domcontentloaded" });
 
-    // نمونه استخراج داده محصول (قابل توسعه بعداً)
-    const data = await page.evaluate(() => {
-      const title = document.querySelector("h1")?.innerText.trim() || null;
-      const price = document
-        .querySelector(".price")
-        ?.innerText.replace(/[^\d]/g, "") || null;
-      const images = Array.from(
-        document.querySelectorAll(".product-gallery img")
-      ).map((img) => img.src);
+    // نمونه اسکرپ از محصول نازدونه
+    const product = await page.evaluate(() => {
+      const title = document.querySelector("h1")?.innerText.trim() || "";
+      const priceEl = document.querySelector(".product-price bdi")?.innerText || "";
+      const gallery = [...document.querySelectorAll(".woocommerce-product-gallery__image img")]
+        .map(img => img.src);
 
-      return { title, price, images };
+      return { title, price: priceEl, images: gallery };
     });
 
     await browser.close();
 
-    return res.json({
-      success: true,
-      source: productUrl,
-      scraped: data,
-    });
+    // بازگشت نتیجه برای n8n
+    return res.json({ success: true, product });
   } catch (err) {
     if (browser) await browser.close();
     error(`Scraping failed: ${err.message}`);
