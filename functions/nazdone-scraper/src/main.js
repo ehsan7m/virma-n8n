@@ -1,27 +1,63 @@
+// استفاده از مرورگر نصب‌شده داخل node_modules
+process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
+
 import { chromium } from 'playwright';
 
-const executablePath = '/root/.cache/ms-playwright/chromium_headless_shell-1181/chrome-linux/headless_shell';
-
+/**
+ * این فانکشن نمونه، محصول رو از URL می‌گیره و عنوانش رو برمی‌گردونه
+ * @param {import('@appwrite/functions').Context} context 
+ */
 export default async (context) => {
   const { req, res, log, error } = context;
 
   try {
+    // دریافت ورودی از body
+    let body = {};
+    try {
+      body = req.bodyJson ?? JSON.parse(req.bodyText ?? "{}");
+    } catch (e) {
+      error(`Bad JSON: ${e.message}`);
+      return res.json({ ok: false, error: "Invalid JSON" }, 400);
+    }
+
+    if (!body.productUrls || !Array.isArray(body.productUrls) || !body.productUrls.length) {
+      return res.json({ ok: false, error: "No productUrls provided" }, 400);
+    }
+
+    log(`Starting scrape for ${body.productUrls.length} products...`);
+
+    // راه‌اندازی مرورگر
     const browser = await chromium.launch({
-      executablePath,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      headless: true
+      headless: true,
     });
 
-    const page = await browser.newPage();
-    await page.goto('https://www.nazdone.com/product/24526/%D8%AA%DB%8C%D8%B4%D8%B1%D8%AA-Little-Bear-NZDE', { waitUntil: 'domcontentloaded' });
+    const results = [];
 
-    const title = await page.title();
+    for (const url of body.productUrls) {
+      try {
+        const page = await browser.newPage();
+        log(`Navigating to ${url}`);
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+        // نمونه داده: گرفتن عنوان صفحه
+        const title = await page.title();
+
+        results.push({ url, title });
+        await page.close();
+      } catch (scrapeErr) {
+        error(`Error scraping ${url}: ${scrapeErr.message}`);
+        results.push({ url, error: scrapeErr.message });
+      }
+    }
 
     await browser.close();
 
-    return res.json({ ok: true, title });
-  } catch (e) {
-    error(e);
-    return res.json({ ok: false, error: e.message }, 500);
+    log("Scraping finished.");
+    return res.json({ ok: true, products: results }, 200);
+
+  } catch (err) {
+    error(`Unexpected error: ${err.message}`);
+    return res.json({ ok: false, error: err.message }, 500);
   }
 };
