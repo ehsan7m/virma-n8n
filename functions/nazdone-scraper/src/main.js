@@ -1,5 +1,8 @@
 // functions/nazdone-scraper/src/main.js
 // Appwrite Functions (Node 18) — context API + robust logging
+// force chromium (not headless_shell)
+process.env.PLAYWRIGHT_CHROMIUM_USE_HEADLESS_SHELL = '0';
+
 import { chromium } from 'playwright';
 
 const WAIT = (ms) => new Promise((r) => setTimeout(r, ms));
