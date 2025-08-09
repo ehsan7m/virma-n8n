@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 
-const executablePath = '/root/.cache/ms-playwright/chromium-1181/chrome-linux/chrome';
+const executablePath = '/root/.cache/ms-playwright/chromium_headless_shell-1181/chrome-linux/headless_shell';
 
 export default async (context) => {
   const { req, res, log, error } = context;
