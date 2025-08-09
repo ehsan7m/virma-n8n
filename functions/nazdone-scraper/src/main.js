@@ -1,10 +1,8 @@
 // functions/nazdone-scraper/src/main.js
-import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
+import puppeteer from "puppeteer";
 
 const WAIT = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// مرتب‌سازی سایزها
 function orderVal(lbl) {
   const s = String(lbl || "").trim().toUpperCase();
   const num = parseFloat(s.replace(/[^\d.]/g, ""));
@@ -32,8 +30,8 @@ function buildACF(sizes=[]) {
 
 async function scrape(page, url) {
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForLoadState?.("networkidle").catch(()=>{});
-  await WAIT(400);
+  try { await page.waitForNetworkIdle({ idleTime: 400, timeout: 5000 }); } catch {}
+  await WAIT(300);
 
   const data = await page.evaluate(() => {
     const title = (document.querySelector("h1")?.innerText ||
@@ -57,8 +55,7 @@ async function scrape(page, url) {
       for (const s of scripts) {
         const t = s.textContent || "";
         if (t.includes("sizes") && (t.includes("colors") || t.includes("stockId"))) {
-          const m = t.match(/\{[\s\S]*\}/);
-          if (m) { try { return JSON.parse(m[0]); } catch(e){} }
+          const m = t.match(/\{[\s\S]*\}/); if (m) { try { return JSON.parse(m[0]); } catch(e){} }
         }
         const asn = t.match(/window\.[A-Za-z0-9_]+\s*=\s*(\{[\s\S]*\});/);
         if (asn) { try { return JSON.parse(asn[1]); } catch(e){} }
@@ -109,7 +106,6 @@ async function scrape(page, url) {
     return { nazdone_id, url: location.href, title, description_html, images, sizes, colors_flat };
   });
 
-  // fallback price extraction
   if (data.sizes?.length) {
     for (const s of data.sizes) {
       if (s.price == null) {
@@ -138,7 +134,7 @@ async function scrape(page, url) {
 }
 
 export default async (context) => {
-  const { req, res, log, error } = context;
+  const { req, res, error } = context;
 
   // ورودی
   let body = {};
@@ -147,17 +143,13 @@ export default async (context) => {
   const url = body.url || req.query?.url;
   if (!url) return res.json({ ok:false, error:'Missing "url" in JSON body' }, 400);
 
-  // پیکربندی کرومیوم سرورلس
-  chromium.setHeadlessMode = true;
-  chromium.setGraphicsMode = false;
-
+  // اجرای Puppeteer با باینری دانلود شده در Build
   let browser;
   try {
     browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(), // ← نیازی به نصب جدا نیست
-      headless: chromium.headless
+      headless: true,
+      executablePath: puppeteer.executablePath(), // ← همون باینریِ دانلودشده
+      args: ["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--no-first-run","--no-zygote"]
     });
   } catch (e) {
     error(`Chromium launch failed: ${e.message}`);
