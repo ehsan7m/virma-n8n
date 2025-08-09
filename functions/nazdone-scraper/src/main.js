@@ -1,17 +1,19 @@
-// functions/nazdone-scraper/src/main.js
-// Appwrite Function — Scrape Nazdone product → JSON for n8n/WooCommerce
-
-// مهم: مرورگر را داخل node_modules نصب و استفاده کن (نه /root/.cache)
+// ─────────────────────────────────────────────────────────────────────────────
+// Force Playwright to prefer local browsers in node_modules and NOT headless_shell
 process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '0';
+process.env.PLAYWRIGHT_CHROMIUM_USE_HEADLESS_SHELL = '0';
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { chromium } from 'playwright';
+import fs from 'fs';
+import path from 'path';
 
 const WAIT = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function sizeOrderValue(labelRaw) {
   const label = String(labelRaw || '').trim().toUpperCase();
   const num = parseFloat(label.replace(/[^\d.]/g, ''));
-  if (!isNaN(num)) return 1000 + num; // سایزهای عددی
+  if (!isNaN(num)) return 1000 + num;
   const map = { XS:1, S:2, M:3, L:4, XL:5, XXL:6, '2XL':6, XXXL:7, '3XL':7, '4XL':8, FREE:2.5, FREESIZE:2.5 };
   if (map[label] !== undefined) return map[label];
   const yearMatch = label.match(/(\d+)\s*سال/);
@@ -24,12 +26,6 @@ function pickLargestSize(sizes = []) {
   return chosen;
 }
 function buildAcfPayloadFromNazdoneSizes(sizes = []) {
-  // Repeater اصلی: field_652e80a54a437
-  // - label سایز: field_652e834f4a43a
-  // - Repeater رنگ‌ها: field_652e83674a43b
-  //   - title: field_652e83834a43c
-  //   - code : field_652e83994a43d
-  //   - stockId: field_stock_id
   return {
     field_652e80a54a437: (sizes || []).map((sz) => ({
       field_652e834f4a43a: sz.label || '',
@@ -40,6 +36,42 @@ function buildAcfPayloadFromNazdoneSizes(sizes = []) {
       })),
     })),
   };
+}
+
+// ـــ پیدا کردن مسیر اجرایی chrome (نه headless_shell)
+function findChromiumExecutable(log) {
+  const candidates = [];
+
+  // 1) داخل node_modules (وقتی PLAYWRIGHT_BROWSERS_PATH=0)
+  const localRoot = path.resolve('node_modules/playwright-core/.local-browsers');
+  if (fs.existsSync(localRoot)) {
+    const dirs = fs.readdirSync(localRoot).filter((d) => /^chromium-\d+$/i.test(d));
+    dirs.sort((a, b) => parseInt(b.split('-')[1]) - parseInt(a.split('-')[1]));
+    for (const d of dirs) {
+      candidates.push(path.join(localRoot, d, 'chrome-linux', 'chrome'));
+    }
+  }
+
+  // 2) مسیر cache سراسری
+  const cacheRoot = '/root/.cache/ms-playwright';
+  if (fs.existsSync(cacheRoot)) {
+    const dirs = fs.readdirSync(cacheRoot).filter((d) => /^chromium-\d+$/i.test(d));
+    dirs.sort((a, b) => parseInt(b.split('-')[1]) - parseInt(a.split('-')[1]));
+    for (const d of dirs) {
+      candidates.push(path.join(cacheRoot, d, 'chrome-linux', 'chrome'));
+    }
+  }
+
+  for (const p of candidates) if (fs.existsSync(p)) return p;
+
+  // لاگ کمک‌کننده برای عیب‌یابی
+  log?.(`No chrome executable found. Checked:\n${candidates.map((p) => ' - ' + p).join('\n') || '  (no candidates)'}`);
+  // همچنین لیست فولدرها را چاپ کن
+  try {
+    if (fs.existsSync(localRoot)) log?.('[browse] local .local-browsers: ' + fs.readdirSync(localRoot).join(', '));
+    if (fs.existsSync(cacheRoot)) log?.('[browse] cache ms-playwright: ' + fs.readdirSync(cacheRoot).join(', '));
+  } catch {}
+  return null;
 }
 
 async function scrapeOne(page, productUrl, log) {
@@ -58,7 +90,6 @@ async function scrapeOne(page, productUrl, log) {
       document.querySelector('.woocommerce-Tabs-panel--description');
     const description_html = descEl ? descEl.innerHTML : '';
 
-    // تصاویر (منحصر به فرد + حذف ابعاد بندانگشتی)
     const imgs = new Set();
     document.querySelectorAll('img').forEach((img) => {
       const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
@@ -68,7 +99,6 @@ async function scrapeOne(page, productUrl, log) {
     });
     const images = Array.from(imgs);
 
-    // تلاش برای یافتن JSON تعبیه‌شده که sizes/colors را دارد
     function digForJson() {
       const scripts = Array.from(document.querySelectorAll('script'));
       for (const s of scripts) {
@@ -117,14 +147,12 @@ async function scrapeOne(page, productUrl, log) {
       }
     }
 
-    // اگر colors_flat از روی سایزها قابل استنتاج باشد
     if (!colors_flat.length && sizes.length) {
       const s = new Set();
       sizes.forEach((sz) => (sz.colors || []).forEach((c) => c.title && s.add(c.title)));
       colors_flat = Array.from(s);
     }
 
-    // شناسه از URL
     let nazdone_id = null;
     const url = location.href;
     const m = url.match(/\/product\/(\d+)\//);
@@ -133,7 +161,6 @@ async function scrapeOne(page, productUrl, log) {
     return { nazdone_id, url, title, description_html, images, sizes, colors_flat };
   });
 
-  // اگر قیمت سایزها خالی بود: تلاش از قیمت عمومی صفحه
   if (data.sizes && data.sizes.length) {
     for (const sz of data.sizes) {
       if (sz.price == null) {
@@ -149,7 +176,6 @@ async function scrapeOne(page, productUrl, log) {
     }
   }
 
-  // قیمت بر اساس «بزرگ‌ترین سایز»
   const largest = pickLargestSize(data.sizes || []);
   const basePrice = largest?.price ? parseInt(largest.price, 10) : null;
   const finalPrice = basePrice ? basePrice + 200000 : null;
@@ -168,22 +194,31 @@ async function scrapeOne(page, productUrl, log) {
 export default async (context) => {
   const { req, res, log, error } = context;
 
-  // 1) ورودی را ایمن بخوان
+  // ورودی
   let body = {};
   try {
     body = req.bodyJson ?? (req.bodyText ? JSON.parse(req.bodyText) : {});
-  } catch (e) {
+  } catch {
     return res.json({ ok: false, error: 'Invalid JSON body' }, 400);
   }
   const url = body.url || req.query?.url;
   if (!url) return res.json({ ok: false, error: 'Missing "url" in JSON body' }, 400);
 
-  log(`Nazdone scrape start → ${url}`);
+  // پیدا کردن chrome
+  const executablePath = findChromiumExecutable(log);
+  if (!executablePath) {
+    return res.json({
+      ok: false,
+      error: 'Chromium executable not found. Ensure build downloaded browsers into node_modules or /root/.cache.',
+    }, 500);
+  }
+  log(`Using chrome: ${executablePath}`);
 
-  // 2) راه‌اندازی Playwright
+  // راه‌اندازی مرورگر
   let browser;
   try {
     browser = await chromium.launch({
+      executablePath, // ← اجبار به chrome (نه headless_shell)
       headless: true,
       args: [
         '--no-sandbox',
@@ -195,43 +230,30 @@ export default async (context) => {
     });
   } catch (e) {
     error(`Chromium launch failed: ${e.message}`);
-    return res.json({
-      ok: false,
-      error: `Chromium launch failed. Make sure build ran: "npm install && PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium ffmpeg". ${e.message}`,
-    }, 500);
+    return res.json({ ok: false, error: `Chromium launch failed: ${e.message}` }, 500);
   }
 
   const page = await browser.newPage();
-  const out = [];
   try {
     const product = await scrapeOne(page, url, log);
-    out.push(product);
+    await browser.close();
+    return res.json({
+      ok: true,
+      products: [{
+        nazdone_id: product.nazdone_id,
+        url: product.url,
+        title: product.title,
+        description_html: product.description_html,
+        images: product.images,
+        colors_flat: product.colors_flat,
+        sizes: product.sizes,
+        _calc: product._calc,
+        _acf_fields: product._acf_fields,
+      }],
+    }, 200);
   } catch (e) {
-    error(`Scrape error: ${e.message}`);
     try { await browser.close(); } catch {}
+    error(`Scrape failed: ${e.message}`);
     return res.json({ ok: false, error: `Scrape failed: ${e.message}` }, 500);
   }
-
-  try { await browser.close(); } catch {}
-
-  log(`Done. products=${out.length}`);
-
-  // 3) خروجی استاندارد برای n8n / WooCommerce
-  return res.json(
-    {
-      ok: true,
-      products: out.map((p) => ({
-        nazdone_id: p.nazdone_id,
-        url: p.url,
-        title: p.title,
-        description_html: p.description_html,
-        images: p.images,
-        colors_flat: p.colors_flat,
-        sizes: p.sizes,            // [{ label, price, colors:[{title, codeColor1, stockId}]}]
-        _calc: p._calc,            // { largestSize, source_last_size_price, final_applied_price }
-        _acf_fields: p._acf_fields // payload آماده برای ACF در ویرما
-      })),
-    },
-    200
-  );
 };
