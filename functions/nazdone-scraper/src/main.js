@@ -1,8 +1,38 @@
 // functions/nazdone-scraper/src/main.js
+import fs from "fs";
+import path from "path";
 import puppeteer from "puppeteer";
 
 const WAIT = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function findChromeExecutable(log) {
+  // در زمان اجرا ریشهٔ کد فانکشن اینجاست:
+  const ROOT = process.cwd(); // معمولا: /usr/local/server/src/function
+  const roots = [
+    path.join(ROOT, "puppeteer-cache"),                           // ⬅️ همینی که در Build ساختیم
+    path.join(ROOT, "node_modules", "puppeteer", ".local-chromium") // fallback
+  ];
+
+  const candidates = [];
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue;
+    const dirs = fs.readdirSync(root).filter(d => /chromium-|chrome-/.test(d));
+    for (const d of dirs) {
+      const p = path.join(root, d, "chrome-linux", "chrome");
+      if (fs.existsSync(p)) return p;
+      // برخی نسخه‌ها پوشه نام متفاوت دارند
+      const p2 = path.join(root, d, "chrome-linux64", "chrome");
+      if (fs.existsSync(p2)) return p2;
+    }
+  }
+
+  // لاگ کمکی
+  log?.("No chrome under these roots:");
+  roots.forEach(r => log?.(" - " + r + (fs.existsSync(r) ? " → [" + fs.readdirSync(r).join(", ") + "]" : " (missing)")));
+  return null;
+}
+
+// مرتب‌سازی سایز
 function orderVal(lbl) {
   const s = String(lbl || "").trim().toUpperCase();
   const num = parseFloat(s.replace(/[^\d.]/g, ""));
@@ -134,7 +164,7 @@ async function scrape(page, url) {
 }
 
 export default async (context) => {
-  const { req, res, error } = context;
+  const { req, res, log, error } = context;
 
   // ورودی
   let body = {};
@@ -143,17 +173,22 @@ export default async (context) => {
   const url = body.url || req.query?.url;
   if (!url) return res.json({ ok:false, error:'Missing "url" in JSON body' }, 400);
 
-  // اجرای Puppeteer با باینری دانلود شده در Build
+  const executablePath = findChromeExecutable(log);
+  if (!executablePath) {
+    return res.json({ ok:false, error:"Chrome not found in packaged cache. Check build logs for download to /usr/local/build/puppeteer-cache." }, 500);
+  }
+  log(`Using chrome: ${executablePath}`);
+
   let browser;
   try {
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: puppeteer.executablePath(), // ← همون باینریِ دانلودشده
+      executablePath,
       args: ["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--no-first-run","--no-zygote"]
     });
   } catch (e) {
-    error(`Chromium launch failed: ${e.message}`);
-    return res.json({ ok:false, error:`Chromium launch failed: ${e.message}` }, 500);
+    error(`Launch failed: ${e.message}`);
+    return res.json({ ok:false, error:`Launch failed: ${e.message}` }, 500);
   }
 
   try {
